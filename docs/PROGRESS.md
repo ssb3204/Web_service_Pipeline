@@ -23,6 +23,90 @@
 
 ---
 
+## 2026-04-26 (세션 4)
+
+### 세션 범위
+Step 4 마무리 (Dockerfile + app 서비스), `queries.sql` 작성, GitHub 리포 생성·분할 커밋 push, README 작성. 이번 세션으로 시각화(Step 5)를 제외한 모든 항목 완료.
+
+### 수행
+- **`requirements.txt` 작성** — `psycopg2-binary==2.9.12`, `tzdata==2026.2`. 처음 핀 고정한 2.9.10이 Python 3.14 wheel을 제공하지 않아 2.9.12로 상향 (#27)
+- **venv에 의존성 설치 + import 검증** — `psycopg2.extras.execute_values`, `zoneinfo("Asia/Seoul")` 둘 다 동작 확인
+- **`event_generator.py` DB 연결 검증** — `docker compose up -d db` → `python event_generator.py` 실행. 첫 시도 시 `event_id` UUID(36자)가 `VARCHAR(20)`을 초과해 실패 → ID 형식 결정 (#28)
+- **ID 형식: 순차 채택** (#28) — UUID 대신 `evt_NNNNN` (5자리), `sess_NNNNN` (5자리). 로그 가독성 우선, 단일 머신이라 분산 충돌 무관
+  - VARCHAR(20) 그대로 유지 (타이트닝은 디스크 영향 없고 작업 비용 큼, #29)
+  - 통계 검증: view 48,620 (97.24%) / cart 851 (1.70%) / purchase 529 (1.06%) / errors 328 (0.66%) / 29,788 sessions
+- **`init.sql`에 `agg_event_summary` 추가** — `(bucket_hour, user_id, event_type)` PK wide fact, `error_count <= event_count` CHECK
+  - 라이브 DB에도 동일 DDL 직접 적용 (재기동 없이 동기화)
+- **`event_generator.py`에 `aggregate_to_summary` ETL 추가** — `TRUNCATE agg_event_summary` 후 `INSERT INTO ... SELECT ... GROUP BY date_trunc('hour', timestamp), user_id, event_type`. 백필 1회 모드라 idempotent 보장
+  - 검증: agg_rows=32,084 / total_events=50,000 / total_errors=328 → raw와 정확히 일치
+- **`queries.sql` 작성** — 3개 분석을 raw/agg 양 버전으로 작성, EXPLAIN ANALYZE 결과 주석 첨부
+  - Q1 시간대 추이 / Q2 이벤트 비율(타입+에러) / Q3 전환율
+  - 측정: Q1 raw 9.84ms vs agg 4.99ms (~2x), Q2 5.95 vs 5.26ms, Q3 4.47 vs 2.74ms (~1.6x). buffers는 일관 ~54% 감소
+- **`Dockerfile` 작성** — `python:3.14-slim` 베이스, 의존성 레이어 캐싱, `TZ=Asia/Seoul` 환경변수
+- **`docker-compose.yml`에 app 서비스 추가** — `build: .`, `depends_on: db service_healthy`, `restart: no`, `DB_HOST=db`
+- **전체 자동 기동 검증** — `down -v` 후 `up --build --abort-on-container-exit --exit-code-from app` 한 번으로 db 기동 → app 빌드·실행 → 50K events + 32K agg INSERT → app exit 0 → db 정상 종료까지 깔끔하게 흘러감
+- **GitHub 리포 생성** — `https://github.com/ssb3204/-_-_-` 등록, 7개 기능 단위 분할 커밋 후 push
+- **`README.md` 작성** — 실행 방법, 아키텍처, DB 스키마(설계 이유 포함), 이벤트 생성기 설계, 분석 쿼리 결과 요약, raw vs agg 비교, 핵심 결정, 구현하면서 고민한 점, 디렉토리 구조, 제약/한계
+
+### 확정 결정 (DECISIONS.md 추가)
+- **#27** psycopg2-binary 2.9.12로 상향 (Python 3.14 wheel 호환)
+- **#28** event_id / session_id 형식: 순차 (UUID 비채택, 단일 머신 가독성 우선)
+- **#29** VARCHAR 폭은 VARCHAR(20) 유지 (PostgreSQL VARCHAR은 max 제약일 뿐 디스크 영향 없음)
+- **#30** Docker Compose app 서비스 구성: 일회성 배치(`restart: no`), `depends_on: service_healthy`, `DB_HOST=db` 네트워크 DNS
+
+### 미완 / 이슈
+- **Step 5 시각화 미착수** — 도구 미결정. 후보 (Streamlit / Metabase / Grafana) 별 트레이드오프 평가 필요
+- backfill timestamp가 실행 일자에 의존 — README에 명시했으나 평가자가 절대값 비교 시 혼동 가능성
+
+### 다음 세션 시작 시 바로 할 것
+1. 시각화 도구 결정 (Streamlit 단순함 vs Metabase 운영성 vs Grafana 시계열 강점)
+2. 도구별 docker-compose 통합 또는 별도 실행 방식 결정
+3. Q1~Q3 차트 3종 구성
+
+---
+
+## 2026-04-26 (세션 4)
+
+### 세션 범위
+Step 4 마무리 (Dockerfile + app 서비스), `queries.sql` 작성, GitHub 리포 생성·분할 커밋 push, README 작성. 이번 세션으로 시각화(Step 5)를 제외한 모든 항목 완료.
+
+### 수행
+- **`requirements.txt` 작성** — `psycopg2-binary==2.9.12`, `tzdata==2026.2`. 처음 핀 고정한 2.9.10이 Python 3.14 wheel을 제공하지 않아 2.9.12로 상향 (#27)
+- **venv에 의존성 설치 + import 검증** — `psycopg2.extras.execute_values`, `zoneinfo("Asia/Seoul")` 둘 다 동작 확인
+- **`event_generator.py` DB 연결 검증** — `docker compose up -d db` → `python event_generator.py` 실행. 첫 시도 시 `event_id` UUID(36자)가 `VARCHAR(20)`을 초과해 실패 → ID 형식 결정 (#28)
+- **ID 형식: 순차 채택** (#28) — UUID 대신 `evt_NNNNN` (5자리), `sess_NNNNN` (5자리). 로그 가독성 우선, 단일 머신이라 분산 충돌 무관
+  - VARCHAR(20) 그대로 유지 (타이트닝은 디스크 영향 없고 작업 비용 큼, #29)
+  - 통계 검증: view 48,620 (97.24%) / cart 851 (1.70%) / purchase 529 (1.06%) / errors 328 (0.66%) / 29,788 sessions
+- **`init.sql`에 `agg_event_summary` 추가** — `(bucket_hour, user_id, event_type)` PK wide fact, `error_count <= event_count` CHECK
+  - 라이브 DB에도 동일 DDL 직접 적용 (재기동 없이 동기화)
+- **`event_generator.py`에 `aggregate_to_summary` ETL 추가** — `TRUNCATE agg_event_summary` 후 `INSERT INTO ... SELECT ... GROUP BY date_trunc('hour', timestamp), user_id, event_type`. 백필 1회 모드라 idempotent 보장
+  - 검증: agg_rows=32,084 / total_events=50,000 / total_errors=328 → raw와 정확히 일치
+- **`queries.sql` 작성** — 3개 분석을 raw/agg 양 버전으로 작성, EXPLAIN ANALYZE 결과 주석 첨부
+  - Q1 시간대 추이 / Q2 이벤트 비율(타입+에러) / Q3 전환율
+  - 측정: Q1 raw 9.84ms vs agg 4.99ms (~2x), Q2 5.95 vs 5.26ms, Q3 4.47 vs 2.74ms (~1.6x). buffers는 일관 ~54% 감소
+- **`Dockerfile` 작성** — `python:3.14-slim` 베이스, 의존성 레이어 캐싱, `TZ=Asia/Seoul` 환경변수
+- **`docker-compose.yml`에 app 서비스 추가** — `build: .`, `depends_on: db service_healthy`, `restart: no`, `DB_HOST=db`
+- **전체 자동 기동 검증** — `down -v` 후 `up --build --abort-on-container-exit --exit-code-from app` 한 번으로 db 기동 → app 빌드·실행 → 50K events + 32K agg INSERT → app exit 0 → db 정상 종료까지 깔끔하게 흘러감
+- **GitHub 리포 생성** — `https://github.com/ssb3204/-_-_-` 등록, 7개 기능 단위 분할 커밋 후 push
+- **`README.md` 작성** — 실행 방법, 아키텍처, DB 스키마(설계 이유 포함), 이벤트 생성기 설계, 분석 쿼리 결과 요약, raw vs agg 비교, 핵심 결정, 구현하면서 고민한 점, 디렉토리 구조, 제약/한계
+
+### 확정 결정 (DECISIONS.md 추가)
+- **#27** psycopg2-binary 2.9.12로 상향 (Python 3.14 wheel 호환)
+- **#28** event_id / session_id 형식: 순차 (UUID 비채택, 단일 머신 가독성 우선)
+- **#29** VARCHAR 폭은 VARCHAR(20) 유지 (PostgreSQL VARCHAR은 max 제약일 뿐 디스크 영향 없음)
+- **#30** Docker Compose app 서비스 구성: 일회성 배치(`restart: no`), `depends_on: service_healthy`, `DB_HOST=db` 네트워크 DNS
+
+### 미완 / 이슈
+- **Step 5 시각화 미착수** — 도구 미결정. 후보 (Streamlit / Metabase / Grafana) 별 트레이드오프 평가 필요
+- backfill timestamp가 실행 일자에 의존 — README에 명시했으나 평가자가 절대값 비교 시 혼동 가능성
+
+### 다음 세션 시작 시 바로 할 것
+1. 시각화 도구 결정 (Streamlit 단순함 vs Metabase 운영성 vs Grafana 시계열 강점)
+2. 도구별 docker-compose 통합 또는 별도 실행 방식 결정
+3. Q1~Q3 차트 3종 구성
+
+---
+
 ## 2026-04-25 (세션 3)
 
 ### 세션 범위

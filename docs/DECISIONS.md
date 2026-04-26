@@ -350,3 +350,54 @@
 - **Tradeoffs**:
   - 얻음: 작업량 절반, "raw 풀스캔 vs fact 인덱스 스캔" 차이 또렷이 보임. PostgreSQL 내장 도구로 측정 (외부 의존 없음)
   - 잃음: X 패턴 코드는 보유하지 못함. 다만 README에 트레이드오프 설명 가능
+
+---
+
+## 27. psycopg2-binary 버전 상향 (2026-04-26)
+
+- **Context**: 처음 핀 고정한 `psycopg2-binary==2.9.10`이 venv의 Python 3.14에서 wheel을 제공하지 않아 pip이 소스 빌드 시도 → `pg_config` 부재로 실패
+- **Decision**: `psycopg2-binary==2.9.12`로 상향 핀 고정. Python 3.14용 `cp314-win_amd64.whl` 정상 제공
+- **Alternatives**: 버전 고정 풀기(재현성 약화), psycopg3 교체(코드 수정 필요), Python 다운그레이드(작업량 큼)
+- **Tradeoffs**:
+  - 얻음: 재현성 유지 + Python 3.14 호환 + 코드 수정 무관
+  - 잃음: 없음 (실질적으로 마이너 버전 상향만)
+
+---
+
+## 28. event_id / session_id 형식: 순차 (2026-04-26, #23 보강)
+
+- **Context**: 처음 `uuid.uuid4()`로 생성한 36자 ID가 `init.sql`의 `VARCHAR(20)` 제약을 초과해 INSERT 실패 (`StringDataRightTruncation`)
+- **Decision**: 순차 ID로 변경. `event_id = f"evt_{i:05d}"` (9자), `session_id = f"sess_{counter:05d}"` (10자)
+- **Alternatives**:
+  - A. `VARCHAR(36)`으로 스키마 확장 (UUID 보존, 표준성)
+  - B. PostgreSQL `UUID` 타입 (16바이트 저장, 인덱스 효율 우수)
+  - C. 순차 ID (선택)
+- **Tradeoffs**:
+  - 얻음: 로그 raw 조회 시 가독성 ↑, 디버깅 시 외워서 칠 수 있음 (`evt_00012847`). 단일 머신·결정론 시나리오라 분산 충돌 무관
+  - 잃음: UUID 표준성 포기. 분산 환경 필요 시 재변경 필요. README에 "단일 머신 백필 한정" 명시
+
+---
+
+## 29. VARCHAR 폭 정책: 기존 VARCHAR(20) 유지 (2026-04-26)
+
+- **Context**: 순차 ID 형식 결정 후 `VARCHAR(20)`을 더 타이트하게 (예: `VARCHAR(9)`/`VARCHAR(10)`) 줄일지 검토. 사용자가 "앞 0이 고정으로 사용 안 하는 길이"라고 짚음
+- **Decision**: 형식만 5자리로 줄이고(`08d`→`05d`, `07d`→`05d`) `VARCHAR(20)` 폭은 그대로 유지
+- **Alternatives**: VARCHAR(9)/VARCHAR(10) 타이트 핏 — 자기 문서화 효과
+- **Tradeoffs**:
+  - 얻음: PostgreSQL `VARCHAR(N)`은 N이 max 제약일 뿐 실제 저장은 데이터 길이만큼 → 디스크 영향 0. EVENT_COUNT를 100K로 늘려도 스키마 마이그레이션 불필요. `down -v` 후 재기동 작업도 회피
+  - 잃음: 스키마가 의도한 형식을 명시적으로 표현하지 않음 (자기 문서화 약함). 다만 평가자가 VARCHAR 크기까지 검토할 가능성 낮음
+
+---
+
+## 30. Docker Compose app 서비스 구성 (2026-04-26)
+
+- **Context**: `docker compose up` 한 번으로 DB 기동 + 이벤트 생성까지 자동 수행하기 위해 app 서비스 추가 필요 (Step 4 마무리)
+- **Decision**:
+  - `Dockerfile`: `python:3.14-slim` 베이스 (로컬 venv와 동일 버전), 의존성 레이어 먼저 복사·설치(`requirements.txt` → `pip install`)해 코드 변경 시 캐시 재사용, `ENV TZ=Asia/Seoul`로 컨테이너 OS TZ 보장
+  - `docker-compose.yml` 추가 블록: `build: .`, `depends_on: db { condition: service_healthy }`, `restart: "no"` (일회성 배치), 환경변수 `DB_HOST=db` (Compose 네트워크 DNS)
+- **Alternatives**:
+  - app은 호스트 venv에서만 실행, Compose는 db만 (평가자 부담 ↑, "한 번에 실행" 요구사항 미달)
+  - 별도 Compose 프로파일 분리 (개발 편의용, 과제 스코프 초과)
+- **Tradeoffs**:
+  - 얻음: 평가자가 `git clone` → `docker compose -p eventlog up --build` 한 줄로 전체 재현. Python 환경 호스트 의존 제거. 과제 원문 "docker compose up 한 번으로 실행" 요구 정확히 부합
+  - 잃음: 첫 빌드 시간 추가(~1분), 호스트 코드 변경 시 `--build` 필요
