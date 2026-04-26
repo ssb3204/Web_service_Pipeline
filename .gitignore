@@ -1,0 +1,29 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code 세션 데이터 (외부 노출 부적절)
+.claude/
+
+# 환경변수 (혹시 추가될 경우 대비)
+.env
+.env.local
+
+# Kaggle 원본 데이터 (대용량, 재배포 권한 없음)
+*.csv
+data/
