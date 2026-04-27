@@ -13,8 +13,8 @@
 전제 조건: Docker Desktop 또는 Docker Engine + Docker Compose v2.
 
 ```bash
-git clone https://github.com/ssb3204/-_-_-.git
-cd -_-_-
+git clone https://github.com/ssb3204/Web_service_Pipeline.git
+cd Web_service_Pipeline
 docker compose -p eventlog up --build -d
 ```
 
