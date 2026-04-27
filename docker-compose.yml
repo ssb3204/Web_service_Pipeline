@@ -32,5 +32,26 @@ services:
       DB_PASSWORD: app
     restart: "no"
 
+  # 시각화: app 완료 후 기동, localhost:8501 접속
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: eventlog_streamlit
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: eventlog
+      DB_USER: app
+      DB_PASSWORD: app
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
 volumes:
   pgdata:
